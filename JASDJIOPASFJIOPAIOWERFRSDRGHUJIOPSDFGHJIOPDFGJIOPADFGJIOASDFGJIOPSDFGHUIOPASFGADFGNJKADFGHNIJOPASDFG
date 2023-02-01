@@ -1,0 +1,848 @@
+if not game:IsLoaded() then
+	game.Loaded:Wait()
+end
+
+-- // If You See This Means That You Got This Or It Got Leaked. Look I Do Not Care About You Skidding Of It But If Your Just Gonna try To Make The Exact Same Replica Imma Beat Yo Mamma. AnyWays Gl 
+
+-- // Variables (Too Lazy To Make It To One Local)
+
+local Arceus 	           = getgenv().Arceus
+local OldSilentAimPart     = Arceus.Silent.Part
+local SilentTarget         = nil
+local AimTarget            = nil
+local DetectedDesync       = false
+local DetectedDesyncV2     = false
+local DetectedUnderGround  = false
+local DetectedUnderGround2 = false
+local DetectedFreeFall     = false
+local AntiAimViewer        = true
+local Script               = {Functions = {}, Friends = {}, Drawing = {}, EspPlayers = {}}
+
+local Players, Client, Mouse, RS, Camera, GuiS, Uis, Ran =
+    game:GetService("Players"),
+    game:GetService("Players").LocalPlayer,
+    game:GetService("Players").LocalPlayer:GetMouse(),
+    game:GetService("RunService"),
+    game:GetService("Workspace").CurrentCamera,
+    game:GetService("GuiService"),
+    game:GetService("UserInputService"),
+    math.random
+
+-- // Drawing For AimAssist And SilentAim
+Script.Drawing.SilentCircle = Drawing.new("Circle")
+Script.Drawing.SilentCircle.Color = Color3.new(1,1,1)
+Script.Drawing.SilentCircle.Thickness = 1
+
+Script.Drawing.AimAssistCircle = Drawing.new("Circle")
+Script.Drawing.AimAssistCircle.Color = Color3.new(1,1,1)
+Script.Drawing.AimAssistCircle.Thickness = 1
+
+-- // Checks If The Player Is Alive
+Script.Functions.Alive = function(plr)
+    if plr and plr.Character and plr.Character:FindFirstChild("HumanoidRootPart") ~= nil and plr.Character:FindFirstChild("Humanoid") ~= nil and plr.Character:FindFirstChild("Head") ~= nil then
+        return true
+    end
+    return false
+end
+
+-- // Checks If Player Is On Your Screen
+Script.Functions.OnScreen = function(Object)
+    local _, screen = Camera:WorldToScreenPoint(Object.Position)
+    return screen
+end
+
+-- // Gets Magnitude From Part Position And Mouse
+Script.Functions.GetMagnitudeFromMouse = function(Part)
+    local PartPos, OnScreen = Camera:WorldToScreenPoint(Part.Position)
+    if OnScreen then
+        local Magnitude = (Vector2.new(PartPos.X, PartPos.Y) - Vector2.new(Mouse.X, Mouse.Y)).Magnitude
+        return Magnitude
+    end
+    return math.huge
+end
+
+-- // Makes Random Number With Vector3 
+Script.Functions.RandomVec = function(Number, Multi)
+    return (Vector3.new(Ran(-Number, Number), Ran(-Number, Number), Ran(-Number, Number)) * Multi or 1)
+end
+
+-- // Checks If The Player Is Behind A Wall Or Something Else
+Script.Functions.VisibleCheck = function(Part, PartDescendant)
+    local Character = Client.Character or Client.CharacterAdded.Wait(Client.CharacterAdded)
+    local Origin = Camera.CFrame.Position
+    local _, OnScreen = Camera.WorldToViewportPoint(Camera, Part.Position)
+
+    if (OnScreen) then
+        local raycastParams = RaycastParams.new()
+        raycastParams.FilterType = Enum.RaycastFilterType.Blacklist
+        raycastParams.FilterDescendantsInstances = {Character, Camera}
+
+        local Result = Workspace.Raycast(Workspace, Origin, Part.Position - Origin, raycastParams)
+
+        if (Result) then
+            local PartHit = Result.Instance
+            local Visible = (not PartHit or Instance.new("Part").IsDescendantOf(PartHit, PartDescendant))
+            
+            return Visible
+        end
+    end
+    return false
+end
+
+-- // Gets The Part From An Object
+Script.Functions.GetParts = function(Object)
+    if string.find(Object.Name, "Gun") then
+        return
+    end
+    if table.find({"Part", "MeshPart", "BasePart"}, Object.ClassName) then
+        return true
+    end
+end
+
+-- // Random Number To Compare
+Script.Functions.CalculateChance = function(percentage)
+    percentage = math.floor(percentage)
+    local chance = math.floor(Random.new().NextNumber(Random.new(), 0, 1) * 100) / 100
+
+    return chance < percentage / 100
+end
+
+-- // Check If Crew Folder Is A Thing
+Script.Functions.FindCrew = function(Player)
+	if Player:FindFirstChild("DataFolder") and Player.DataFolder:FindFirstChild("Information") and Player.DataFolder.Information:FindFirstChild("Crew") and Client:FindFirstChild("DataFolder") and Client.DataFolder:FindFirstChild("Information") and Client.DataFolder.Information:FindFirstChild("Crew") then
+        if Client.DataFolder.Information:FindFirstChild("Crew").Value ~= nil and Player.DataFolder.Information:FindFirstChild("Crew").Value ~= nil and Player.DataFolder.Information:FindFirstChild("Crew").Value ~= "" and Client.DataFolder.Information:FindFirstChild("Crew").Value ~= "" then 
+			return true
+		end
+	end
+	return false
+end
+
+-- // Splits The Gun Name And Splits []
+Script.Functions.GetGunName = function(name)
+    local split = string.split(string.split(name, "[")[2], "]")[1]
+    return split
+end
+
+-- // Gets Current Gun
+Script.Functions.GetCurrentWeaponName = function()
+    if Client.Character and Client.Character:FindFirstChildWhichIsA("Tool") then
+       local Tool =  Client.Character:FindFirstChildWhichIsA("Tool")
+       if string.find(Tool.Name, "%[") and string.find(Tool.Name, "%]") and not string.find(Tool.Name, "Wallet") and not string.find(Tool.Name, "Phone") then
+          return Script.Functions.GetGunName(Tool.Name)
+       end
+    end
+    return nil
+end
+
+-- // Drawing Function With Property Attached
+Script.Functions.NewDrawing = function(type, properties)
+    local newDrawing = Drawing.new(type)
+
+    for i,v in next, properties or {} do
+        newDrawing[i] = v
+    end
+    return newDrawing
+end
+
+-- // Draws For The New Players Joining For Esp
+Script.Functions.NewPlayer = function(v)
+    Script.EspPlayers[v] = {
+        name = Script.Functions.NewDrawing("Text", {Color = Color3.fromRGB(255,2550, 255), Outline = true, Visible = false, Center = true, Size = 13, Font = 0}),
+        boxOutline = Script.Functions.NewDrawing("Square", {Color = Color3.fromRGB(0, 0, 0), Thickness = 3, Visible = false}),
+        box = Script.Functions.NewDrawing("Square", {Color = Color3.fromRGB(255, 255, 255), Thickness = 1, Visible = false}),
+        healthBarOutline = Script.Functions.NewDrawing("Line", {Color = Color3.fromRGB(0, 0, 0), Thickness = 3, Visible = false}),
+        healthBar = Script.Functions.NewDrawing("Line", {Color = Color3.fromRGB(0, 255, 0), Thickness = 1, Visible = false}),
+        healthText = Script.Functions.NewDrawing("Text", {Color = Color3.fromRGB(0, 255, 0), Outline = true, Visible = false, Center = true, Size = 13, Font = 0}),
+        distance = Script.Functions.NewDrawing("Text", {Color = Color3.fromRGB(255, 255, 255), Outline = true, Visible = false, Center = true, Size = 13, Font = 0})
+    }
+end
+
+-- // Gets The Closest Part From Cursor
+Script.Functions.GetClosestBodyPart = function(Char)
+    local Distance = math.huge
+    local ClosestPart = nil
+    local Filterd = {}
+
+    if not (Char and Char:IsA("Model")) then
+        return ClosestPart
+    end
+    local Parts = Char:GetChildren()
+    for _, v in pairs(Parts) do
+        if Script.Functions.GetParts(v) and Script.Functions.OnScreen(v) then
+            table.insert(Filterd, v)
+            for _, Part in pairs(Filterd) do                
+                local Magnitude = Script.Functions.GetMagnitudeFromMouse(Part)
+                if Magnitude < Distance then
+                    ClosestPart = Part
+                    Distance = Magnitude
+                end
+            end
+        end
+    end
+    return ClosestPart
+end
+
+-- // Gets The Closest Player For Cursor (Silent Aim)
+Script.Functions.GetClosestPlayer = function()
+    local Target = nil
+    local Closest = math.huge
+    local HitChance = Script.Functions.CalculateChance(Arceus.Silent.HitChance)
+
+    if not HitChance then
+        return nil
+    end
+    for _, v in pairs(Players:GetPlayers()) do
+        if v.Character and v ~= Client and v.Character:FindFirstChild("HumanoidRootPart") then
+            if not Script.Functions.OnScreen(v.Character.HumanoidRootPart) then 
+                continue 
+            end
+            if Arceus.Silent.WallCheck and not Script.Functions.VisibleCheck(v.Character.HumanoidRootPart, v.Character) then 
+                continue 
+            end
+            if Arceus.Silent.CheckIf_KO and v.Character:FindFirstChild("BodyEffects") then
+                if v.Character.BodyEffects:FindFirstChild("K.O").Value or v.Character:FindFirstChild("GRABBING_CONSTRAINT") then
+                    continue
+                end
+            end
+            if Arceus.Silent.CheckIf_TargetDeath and v.Character:FindFirstChild("Humanoid") then
+                if v.Character.Humanoid.health < 4 then
+                    continue
+                end
+            end
+            if Arceus.Both.VisibleCheck and v.Character:FindFirstChild("Head") then
+                if v.Character.Head.Transparency > 0.5 then
+                    continue
+                end
+            end
+            if Arceus.Both.CrewCheck and Script.Functions.FindCrew(v) and v.DataFolder.Information:FindFirstChild("Crew").Value == Client.DataFolder.Information:FindFirstChild("Crew").Value then
+                continue
+            end
+            if Arceus.Both.TeamCheck then
+                if v.Team ~= Client.Team then
+                    continue
+                end
+            end
+            if Arceus.Both.FriendCheck then
+                if not table.find(Script.Friends, v.UserId) then
+                    continue
+                end
+            end
+            local Distance = Script.Functions.GetMagnitudeFromMouse(v.Character.HumanoidRootPart)
+
+            if (Distance < Closest and Script.Drawing.SilentCircle.Radius + (Distance * 0.4) > Distance) then
+                Closest = Distance
+                Target = v
+            end
+        end
+    end
+
+    SilentTarget = Target
+end
+
+-- // Gets Closest Player From Mouse (AimAssist)
+Script.Functions.GetClosestPlayer2 = function()
+    local Target = nil
+    local Distance = nil
+    local Closest = math.huge
+    
+    for _, v in pairs(Players:GetPlayers()) do
+        if v.Character and v ~= Client and v.Character:FindFirstChild("HumanoidRootPart") then
+            if not Script.Functions.OnScreen(v.Character.HumanoidRootPart) then 
+                continue 
+            end
+            if Arceus.AimAssist.WallCheck and not Script.Functions.VisibleCheck(v.Character.HumanoidRootPart, v.Character) then 
+                continue 
+            end
+            local Distance = Script.Functions.GetMagnitudeFromMouse(v.Character.HumanoidRootPart)
+
+            if Distance < Closest then
+                if (Arceus.AimAssist.UseCircleRadius and Script.Drawing.AimAssistCircle.Radius + (Distance * 0.4) < Distance) then continue end
+                Closest = Distance
+                Target = v
+            end
+        end
+    end
+
+    if Script.Functions.Alive(Target) then
+		if Arceus.Both.VisibleCheck then
+			if Target.Character.Head.Transparency > 0.5 then
+				return nil
+			end
+		end
+		if Arceus.Both.CrewCheck and Script.Functions.FindCrew(Target) and Target.DataFolder.Information:FindFirstChild("Crew").Value == Client.DataFolder.Information:FindFirstChild("Crew").Value then
+			return nil
+		end
+	end
+    if Arceus.Both.TeamCheck and Target then
+        if Target.Team == Client.Team then
+            return nil
+        end
+    end
+    if Arceus.Both.FriendCheck then
+        if table.find(Script.Friends, Target.UserId) then
+            return nil
+        end
+    end
+    
+    AimTarget = Target
+end
+
+-- // KeyDown Check
+Mouse.KeyDown:Connect(function(Key)
+    local Keybind = Arceus.AimAssist.Key:lower()
+    if Key == Keybind then
+        if Arceus.AimAssist.Enabled then
+            IsTargetting = not IsTargetting
+            if IsTargetting then
+                Script.Functions.GetClosestPlayer2()
+            else
+                if AimTarget ~= nil then
+                    AimTarget = nil
+                    IsTargetting = false
+                end
+            end
+        end
+    end
+    local Keybind2 = Arceus.Silent.Keybind:lower()
+    if Key == Keybind2 and Arceus.Silent.UseKeybind then
+        Arceus.Silent.Enabled = not Arceus.Silent.Enabled
+        if Arceus.Both.SendNotification then
+            game.StarterGui:SetCore("SendNotification",{
+                Title = "Arceus.cc",
+                Text = "Silent Aim: " .. tostring(Arceus.Silent.Enabled),
+                Icon = "rbxassetid://12225612888",
+                Duration = 1
+            })
+        end
+    end
+    local Keybind3 = Arceus.Both.UnderGroundKey:lower()
+    if Key == Keybind3 and Arceus.Both.UseUnderGroundKeybind then
+        Arceus.Both.DetectUnderGround = not Arceus.Both.DetectUnderGround
+        if Arceus.Both.SendNotification then
+            game.StarterGui:SetCore("SendNotification",{
+                Title = "Arceus.cc",
+                Text = "UnderGround Resolver: " .. tostring(Arceus.Both.DetectUnderGround),
+                Icon = "rbxassetid://12225612888",
+                Duration = 1
+            })
+        end
+    end
+    local Keybind4 = Arceus.Both.DetectDesyncKey:lower()
+    if Key == Keybind4 and Arceus.Both.UsDetectDesyncKeybind then
+        Arceus.Both.DetectDesync = not Arceus.Both.DetectDesync
+        if Arceus.Both.SendNotification then
+            game.StarterGui:SetCore("SendNotification",{
+                Title = "Arceus.cc",
+                Text = "Desync Resolver: " .. tostring(Arceus.Both.DetectDesync),
+                Icon = "rbxassetid://12225612888",
+                Duration = 1
+            })
+        end
+    end
+    local Keybind5 = Arceus.Both.LayKeybind:lower()
+    if Key == Keybind5 and Arceus.Both.UseLay then
+        local Args = {
+            [1] = "AnimationPack",
+            [2] = "Lay"
+        }
+        game:GetService("ReplicatedStorage"):FindFirstChild("MainEvent"):FireServer(unpack(Args))
+    end
+    local Keybind6 = Arceus.Esp.EspKey:lower()
+    if Key == Keybind6 and Arceus.Esp.UseEspKeybind then
+		if Arceus.Esp.HoldMode then
+			Arceus.Esp.Enabled = true
+		else
+			Arceus.Esp.Enabled = not Arceus.Esp.Enabled
+		end
+    end
+end)
+
+-- // KeyUp Check
+Mouse.KeyUp:Connect(function(Key)
+    local Keybind = Arceus.Esp.EspKey:lower()
+    if Key == Keybind and Arceus.Esp.UseEspKeybind and Arceus.Esp.HoldMode then
+		Arceus.Esp.Enabled = false
+    end
+    local Keybind2 = Arceus.AimAssist.Key:lower()
+    if Key == Keybind2 and Arceus.AimAssist.Enabled and Arceus.AimAssist.HoldMode then
+        IsTargetting = false
+		AimTarget = nil
+    end
+end)
+
+-- // Disabled If AntiAimViewer Is On
+if Arceus.Silent.AntiAimViewer then
+    AntiAimViewer = false
+else
+    AntiAimViewer = true
+end
+
+-- // Blocks Mouse Triggering
+game:GetService("ContextActionService"):BindActionAtPriority(
+    "LeftMouseBlock",
+    function()
+        if AntiAimViewer == false and Arceus.Silent.AntiAimViewer and Client.Character and Client.Character:FindFirstChildWhichIsA("Tool") then
+            return Enum.ContextActionResult.Sink
+        else
+            return Enum.ContextActionResult.Pass
+        end
+    end,
+    true,
+    Enum.ContextActionPriority.Low.Value,
+    Enum.UserInputType.MouseButton1
+)
+
+
+-- // Delaying The Mouse Trigger
+Uis.InputBegan:connect(function(input)
+    if input.UserInputType == Enum.UserInputType[Arceus.Silent.TriggerBotKey] and Arceus.Silent.UseTriggerBotKeybind then
+        Arceus.Silent.TriggerBot = true
+    end
+    if input.UserInputType == Enum.UserInputType.MouseButton1 and Arceus.Silent.AntiAimViewer and Client.Character and Client.Character:FindFirstChildWhichIsA("Tool") then
+        if AntiAimViewer == false then
+            AntiAimViewer = true
+            local ping = math.floor(game:GetService("Stats").Network.ServerStatsItem["Data Ping"]:GetValue())
+            wait(tostring(ping) * (Arceus.Silent.AntiAimViewerInterval / 10000))
+            mouse1press()
+            wait()
+            AntiAimViewer = false
+        end
+    end
+end)
+
+-- // Helps With Automatics
+Uis.InputEnded:connect(function(input)
+    if input.UserInputType == Enum.UserInputType[Arceus.Silent.TriggerBotKey] and Arceus.Silent.UseTriggerBotKeybind then
+        Arceus.Silent.TriggerBot = false
+    end
+    if input.UserInputType == Enum.UserInputType.MouseButton1 and Arceus.Silent.AntiAimViewer and Client.Character and Client.Character:FindFirstChildWhichIsA("Tool") then
+        if AntiAimViewer == false then
+            AntiAimViewer = true
+            mouse1click()
+            wait()
+            mouse1click()
+            wait()
+            AntiAimViewer = false
+        end
+    end
+end)
+
+-- // Server Side Mouse Position Changer
+local OldIndex = nil 
+OldIndex = hookmetamethod(game, "__index", function(self, Index)
+    if not checkcaller() and Mouse and self == Mouse and Index == "Hit" and Arceus.Silent.Enabled and AntiAimViewer then
+        if Script.Functions.Alive(SilentTarget) and Players[tostring(SilentTarget)].Character:FindFirstChild(Arceus.Silent.Part) then
+            local EndPoint = nil
+            local TargetPos = Players[tostring(SilentTarget)].Character[Arceus.Silent.Part].CFrame
+            local TargetVel = Players[tostring(SilentTarget)].Character.HumanoidRootPart.Velocity
+            local TargetMov = Players[tostring(SilentTarget)].Character.Humanoid.MoveDirection
+
+            if Arceus.Both.DetectDesync then
+                local Magnitude = TargetVel.magnitude
+                local Magnitude2 = TargetMov.magnitude
+                if Magnitude > Arceus.Both.DesyncDetection then
+                    DetectedDesync = true
+                elseif Magnitude < 1 and Magnitude2 > 0.01 then
+                    DetectedDesync = true
+                elseif Magnitude > 5 and Magnitude2 < 0.01 then
+                    DetectedDesync = true
+                else
+                    DetectedDesync = false
+                end
+            else
+                if DetectedDesync ~= false then
+                    DetectedDesync = false
+                end
+            end
+            if Arceus.Silent.AntiGroundShots then
+                if TargetVel.Y < Arceus.Silent.WhenAntiGroundActivate then
+                    DetectedFreeFall = true
+                else
+                    if DetectedFreeFall ~= false then
+                        DetectedFreeFall = false
+                    end
+                end
+            end
+            if Arceus.Both.DetectUnderGround then 
+                if TargetVel.Y < Arceus.Both.UnderGroundDetection then            
+                    DetectedUnderGround = true
+                else
+                    DetectedUnderGround = false
+                end
+            else
+                if DetectedUnderGround ~= false then
+                    DetectedUnderGround = false
+                end
+            end
+
+            if DetectedDesync then
+                local MoveDirection = TargetMov * 16
+                EndPoint = TargetPos + (MoveDirection * Arceus.Silent.PredictionVelocity)
+            elseif DetectedUnderGround then
+                EndPoint = TargetPos + (Vector3.new(TargetVel.X, 0, TargetVel.Z) * Arceus.Silent.PredictionVelocity)
+            elseif DetectedFreeFall then
+                EndPoint = TargetPos + (Vector3.new(TargetVel.X, (TargetVel.Y * Arceus.Silent.AntiGroundValue), TargetVel.Z) * Arceus.Silent.PredictionVelocity)
+            elseif Arceus.Silent.PredictMovement then
+                if Arceus.Silent.Humanize then
+                    local Humanize = Arceus.Silent.HumanizeValue
+                    EndPoint = TargetPos + Script.Functions.RandomVec(Humanize, 0.01) + (Vector3.new(TargetVel.X, (TargetVel.Y * 0.5), TargetVel.Z) * Arceus.Silent.PredictionVelocity)
+                else
+                    EndPoint = TargetPos + (Vector3.new(TargetVel.X, (TargetVel.Y * 0.5), TargetVel.Z) * Arceus.Silent.PredictionVelocity)
+                end
+            else
+                if Arceus.Silent.Humanize then
+                    local Humanize = Arceus.Silent.HumanizeValue
+                    EndPoint = TargetPos + Script.Functions.RandomVec(Humanize, 0.01)
+                else
+                    EndPoint = TargetPos
+                end
+            end
+            
+            if EndPoint ~= nil then
+                return (Index == "Hit" and EndPoint)
+            end
+        end
+    end
+    return OldIndex(self, Index)
+end)
+
+-- // Silent Aim Misc
+Script.Functions.SilentMisc = function()
+	if Arceus.Silent.Enabled then
+       if Script.Functions.Alive(SilentTarget) then
+            if Arceus.Silent.UseAirPart then
+                if SilentTarget.Character.Humanoid:GetState() == Enum.HumanoidStateType.Freefall then
+                    Arceus.Silent.Part = Arceus.Silent.AirPart
+                else
+                    Arceus.Silent.Part = OldSilentAimPart
+                end
+            end
+            if Arceus.Silent.TriggerBot then
+				mouse1click()
+			end
+    	end
+        if Arceus.Silent.AutoPrediction then
+            local ping = game:GetService("Stats").Network.ServerStatsItem["Data Ping"]:GetValue() * 0.5
+            local Splitting = string.split(ping, ".")
+            if Splitting[2] then
+                Arceus.Silent.PredictionVelocity = 0.1 .. Splitting[1] .. Splitting[2]
+            else
+                Arceus.Silent.PredictionVelocity = 0.1 .. Splitting[1]
+            end
+        end
+	end
+end
+
+-- // The AimAssist Mouse Dragging/Check Functions
+Script.Functions.MouseChanger = function()
+    if Arceus.AimAssist.Enabled and Script.Functions.Alive(AimTarget) and Players[tostring(AimTarget)].Character:FindFirstChild(Arceus.AimAssist.Part) and Script.Functions.OnScreen(Players[tostring(AimTarget)].Character[Arceus.AimAssist.Part]) then
+        local EndPosition = nil
+        local TargetPos = Players[tostring(AimTarget)].Character[Arceus.AimAssist.Part].Position
+        local TargetVel = Players[tostring(AimTarget)].Character[Arceus.AimAssist.Part].Velocity
+        local TargetMov = Players[tostring(AimTarget)].Character.Humanoid.MoveDirection
+
+        if Arceus.Both.DetectDesync then
+            local Magnitude = TargetVel.magnitude
+            local Magnitude2 = TargetMov.magnitude
+            if Magnitude > Arceus.Both.DesyncDetection then
+                DetectedDesyncV2 = true
+            elseif Magnitude < 1 and Magnitude2 > 0.01 then
+                DetectedDesyncV2 = true
+            elseif Magnitude > 5 and Magnitude2 < 0.01 then
+                DetectedDesyncV2 = true
+            else
+                DetectedDesyncV2 = false
+            end
+        else
+            if DetectedDesyncV2 ~= false then
+                DetectedDesyncV2 = false
+            end
+        end
+        if Arceus.Both.DetectUnderGround then 
+            if TargetVel.Y < Arceus.Both.UnderGroundDetection then            
+                DetectedUnderGround2 = true
+            else
+                DetectedUnderGround2 = false
+            end
+        else
+            if DetectedUnderGround2 ~= false then
+                DetectedUnderGround2 = false
+            end
+        end
+
+        if Script.Functions.Alive(Client) then
+            if Arceus.AimAssist.DisableLocalDeath then
+                if Client.Character.Humanoid.health < 4 then
+                    AimTarget = nil
+                    IsTargetting = false
+                    return
+                end
+            end
+            if Arceus.AimAssist.DisableOutSideCircle then
+                local Magnitude = Script.Functions.GetMagnitudeFromMouse(AimTarget.Character.HumanoidRootPart)
+                if Script.Drawing.AimAssistCircle.Radius < Magnitude then
+                    AimTarget = nil
+                    IsTargetting = false
+                    return
+                end
+            end
+        end
+
+        if Arceus.AimAssist.DisableOn_KO and AimTarget.Character:FindFirstChild("BodyEffects") then 
+            local KOd = AimTarget.Character.BodyEffects:FindFirstChild("K.O").Value
+            local Grabbed = AimTarget.Character:FindFirstChild("GRABBING_CONSTRAINT") ~= nil
+            if KOd or Grabbed then
+                AimTarget = nil
+                IsTargetting = false
+                return
+            end
+        end
+        if Arceus.AimAssist.DisableTargetDeath then
+            if AimTarget.Character.Humanoid.health < 4 then
+                AimTarget = nil
+                IsTargetting = false
+                return
+            end
+        end
+
+        if DetectedDesyncV2 and Arceus.AimAssist.PredictMovement then
+            local MoveDirection = TargetMov * 16
+            EndPosition = Camera:WorldToScreenPoint(TargetPos + (MoveDirection * Arceus.AimAssist.PredictionVelocity))
+        elseif DetectedUnderGround2 and Arceus.AimAssist.PredictMovement then
+            EndPosition = Camera:WorldToScreenPoint(TargetPos + (Vector3.new(TargetVel.X, 0, TargetVel.Z) * Arceus.AimAssist.PredictionVelocity))
+        elseif Arceus.AimAssist.PredictMovement then
+            if Arceus.AimAssist.UseShake then
+                local Shake = Arceus.AimAssist.ShakeValue
+                EndPosition = Camera:WorldToScreenPoint(TargetPos + (TargetVel * Arceus.AimAssist.PredictionVelocity) + Script.Functions.RandomVec(Shake, 0.1))
+            else
+                EndPosition = Camera:WorldToScreenPoint(TargetPos + (TargetVel * Arceus.AimAssist.PredictionVelocity))
+            end
+        else
+            if Arceus.AimAssist.UseShake then
+                local Shake = Arceus.AimAssist.ShakeValue
+                EndPosition = Camera:WorldToScreenPoint(TargetPos + Script.Functions.RandomVec(Shake, 0.1))
+            else
+                EndPosition = Camera:WorldToScreenPoint(TargetPos)
+            end
+        end
+
+        if EndPosition ~= nil then
+            local InCrementX = (EndPosition.X - Mouse.X) * Arceus.AimAssist.Smoothness_X
+            local InCrementY = (EndPosition.Y - Mouse.Y) * Arceus.AimAssist.Smoothness_Y
+            mousemoverel(InCrementX, InCrementY)
+        end
+    end
+end
+
+--// Update Size/Position Of Circle
+Script.Functions.UpdateFOV = function()
+    if (not Script.Drawing.SilentCircle and not Script.Drawing.AimAssistCircle) then
+        return Script.Drawing.SilentCircle and Script.Drawing.AimAssistCircle
+    end
+    
+    Script.Drawing.AimAssistCircle.Visible = Arceus.AimAssistFOV.Visible
+    Script.Drawing.AimAssistCircle.Filled = Arceus.AimAssistFOV.Filled
+    Script.Drawing.AimAssistCircle.Color = Arceus.AimAssistFOV.Color
+    Script.Drawing.AimAssistCircle.Transparency = Arceus.AimAssistFOV.Transparency
+    Script.Drawing.AimAssistCircle.Position = Vector2.new(Mouse.X, Mouse.Y + GuiS:GetGuiInset().Y)
+	Script.Drawing.AimAssistCircle.Radius = Arceus.AimAssistFOV.Radius * 3
+    
+    Script.Drawing.SilentCircle.Visible = Arceus.SilentFOV.Visible
+    Script.Drawing.SilentCircle.Color = Arceus.SilentFOV.Color
+    Script.Drawing.SilentCircle.Filled = Arceus.SilentFOV.Filled
+    Script.Drawing.SilentCircle.Transparency = Arceus.SilentFOV.Transparency
+    Script.Drawing.SilentCircle.Position = Vector2.new(Mouse.X, Mouse.Y + GuiS:GetGuiInset().Y)
+	Script.Drawing.SilentCircle.Radius = Arceus.SilentFOV.Radius * 3
+	
+    if Arceus.RangeFOV.Enabled or Arceus.RangeFOV.Enabled then
+		local CurrentGun = Script.Functions.GetCurrentWeaponName()
+		if Arceus.GunFOV.Enabled then
+			local WeaponSettings = Arceus.GunFOV[CurrentGun]
+			if WeaponSettings ~= nil then
+				Arceus.SilentFOV.Radius = WeaponSettings.Fov
+			end
+		end
+		if Arceus.RangeFOV.Enabled then
+			local WeaponSettingsV2 = Arceus.RangeFOV[CurrentGun]
+			if WeaponSettingsV2 ~= nil then
+				if Script.Functions.Alive(SilentTarget) and Script.Functions.Alive(Client) then
+                    local Magnitude = (SilentTarget.Character.HumanoidRootPart.Position - Client.Character.HumanoidRootPart.Position).Magnitude
+					if Magnitude < Arceus.RangeFOV.Close_Activation then
+						Arceus.SilentFOV.Radius = WeaponSettingsV2.Close
+					elseif Magnitude < Arceus.RangeFOV.Medium_Activation then
+						Arceus.SilentFOV.Radius = WeaponSettingsV2.Med
+					elseif Magnitude < Arceus.RangeFOV.Far_Activation then
+						Arceus.SilentFOV.Radius = WeaponSettingsV2.Far
+					end
+				end
+			end
+		end
+	end
+end
+-- // Updates Esp Posistions
+Script.Functions.UpdateEsp = function()
+    for i,v in pairs(Script.EspPlayers) do
+        if Arceus.Esp.Enabled and i ~= Client and i.Character and i.Character:FindFirstChild("Humanoid") and i.Character:FindFirstChild("HumanoidRootPart") and i.Character:FindFirstChild("Head") then
+            local Hum = i.Character.Humanoid
+            local Hrp = i.Character.HumanoidRootPart
+            
+            local Vector, OnScreen = Camera:WorldToViewportPoint(i.Character.HumanoidRootPart.Position)
+            local Size = (Camera:WorldToViewportPoint(Hrp.Position - Vector3.new(0, 3, 0)).Y - Camera:WorldToViewportPoint(Hrp.Position + Vector3.new(0, 2.6, 0)).Y) / 2
+            local BoxSize = Vector2.new(math.floor(Size * 1.5), math.floor(Size * 1.9))
+            local BoxPos = Vector2.new(math.floor(Vector.X - Size * 1.5 / 2), math.floor(Vector.Y - Size * 1.6 / 2))
+            local BottomOffset = BoxSize.Y + BoxPos.Y + 1
+
+            if OnScreen then
+                if Arceus.Esp.Name.Enabled then
+                    v.name.Position = Vector2.new(BoxSize.X / 2 + BoxPos.X, BoxPos.Y - 16)
+                    v.name.Outline = Arceus.Esp.Name.OutLine
+                    v.name.Text = tostring(i)
+                    v.name.Color = Arceus.Esp.Name.Color
+                    v.name.OutlineColor = Color3.fromRGB(0, 0, 0)
+                    v.name.Font = 0
+                    v.name.Size = 16
+
+                    v.name.Visible = true
+                else
+                    v.name.Visible = false
+                end
+                if Arceus.Esp.Distance.Enabled and Client.Character and Client.Character:FindFirstChild("HumanoidRootPart") then
+                    v.distance.Position = Vector2.new(BoxSize.X / 2 + BoxPos.X, BottomOffset)
+                    v.distance.Outline = Arceus.Esp.Distance.OutLine
+                    v.distance.Text = "[" .. math.floor((Hrp.Position - Client.Character.HumanoidRootPart.Position).Magnitude) .. "m]"
+                    v.distance.Color = Arceus.Esp.Distance.Color
+                    v.distance.OutlineColor = Color3.fromRGB(0, 0, 0)
+                    BottomOffset = BottomOffset + 15
+
+                    v.distance.Font = 0
+                    v.distance.Size = 16
+
+                    v.distance.Visible = true
+                else
+                    v.distance.Visible = false
+                end
+                if Arceus.Esp.Box.Enabled then
+                    v.boxOutline.Size = BoxSize
+                    v.boxOutline.Position = BoxPos
+                    v.boxOutline.Visible = Arceus.Esp.Box.OutLine
+                    v.boxOutline.Color = Color3.fromRGB(0, 0, 0)
+    
+                    v.box.Size = BoxSize
+                    v.box.Position = BoxPos
+                    v.box.Color = Arceus.Esp.Box.Color
+                    v.box.Visible = true
+                else
+                    v.boxOutline.Visible = false
+                    v.box.Visible = false
+                end
+                if Arceus.Esp.HealthBar.Enabled then
+                    v.healthBar.From = Vector2.new((BoxPos.X - 5), BoxPos.Y + BoxSize.Y)
+                    v.healthBar.To = Vector2.new(v.healthBar.From.X, v.healthBar.From.Y - (Hum.Health / Hum.MaxHealth) * BoxSize.Y)
+                    v.healthBar.Color = Arceus.Esp.HealthBar.Color
+                    v.healthBar.Visible = true
+
+                    v.healthBarOutline.From = Vector2.new(v.healthBar.From.X, BoxPos.Y + BoxSize.Y + 1)
+                    v.healthBarOutline.To = Vector2.new(v.healthBar.From.X, (v.healthBar.From.Y - 1 * BoxSize.Y) -1)
+                    v.healthBarOutline.Color = Color3.fromRGB(0, 0, 0)
+                    v.healthBarOutline.Visible = Arceus.Esp.HealthBar.OutLine
+                else
+                    v.healthBarOutline.Visible = false
+                    v.healthBar.Visible = false
+                end
+                if Arceus.Esp.HealthText.Enabled then
+                    v.healthText.Text = tostring(math.floor((Hum.Health / Hum.MaxHealth) * 100 + 0.5))
+                    v.healthText.Position = Vector2.new((BoxPos.X - 20), (BoxPos.Y + BoxSize.Y - 1 * BoxSize.Y) -1)
+                    v.healthText.Color = Arceus.Esp.HealthText.Color
+                    v.healthText.OutlineColor = Color3.fromRGB(0, 0, 0)
+                    v.healthText.Outline = Arceus.Esp.HealthText.OutLine
+
+                    v.healthText.Font = 0
+                    v.healthText.Size = 16
+
+                    v.healthText.Visible = true
+                else
+                    v.healthText.Visible = false
+                end
+            else
+                v.name.Visible = false
+                v.boxOutline.Visible = false
+                v.box.Visible = false
+                v.healthBarOutline.Visible = false
+                v.healthBar.Visible = false
+                v.healthText.Visible = false
+                v.distance.Visible = false
+            end
+        else
+            v.name.Visible = false
+            v.boxOutline.Visible = false
+            v.box.Visible = false
+            v.healthBarOutline.Visible = false
+            v.healthBar.Visible = false
+            v.healthText.Visible = false
+            v.distance.Visible = false
+        end
+    end
+end
+
+-- // Client Fps (EXECUTES PER FRAME)
+RS.Heartbeat:Connect(function()
+    Script.Functions.GetClosestPlayer()
+    Script.Functions.SilentMisc()
+    Script.Functions.MouseChanger()
+end)
+
+-- // Server Tick (EXECUTES PER TICK)
+RS.RenderStepped:Connect(function()
+    Script.Functions.UpdateEsp()
+    Script.Functions.UpdateFOV()
+    if Arceus.AimAssist.Enabled and Script.Functions.Alive(AimTarget) and Arceus.Silent.ClosestPart and Script.Functions.Alive(SilentTarget) then
+        local currentpart = tostring(Script.Functions.GetClosestBodyPart(AimTarget.Character))
+        if Arceus.AimAssist.ClosestPart then
+			Arceus.AimAssist.Part = currentpart
+		end
+        if Arceus.Silent.ClosestPart then
+            Arceus.Silent.Part = currentpart
+            OldSilentAimPart = Arceus.Silent.Part
+        end
+        return
+    end
+    if Arceus.AimAssist.Enabled then
+        if Arceus.AimAssist.ClosestPart and Script.Functions.Alive(AimTarget) then
+            Arceus.AimAssist.Part = tostring(Script.Functions.GetClosestBodyPart(AimTarget.Character))
+        end
+    end
+    if Arceus.Silent.Enabled then
+        if Arceus.Silent.ClosestPart and Script.Functions.Alive(SilentTarget) then
+            Arceus.Silent.Part = tostring(Script.Functions.GetClosestBodyPart(SilentTarget.Character))
+            OldSilentAimPart = Arceus.Silent.Part
+        end
+    end
+end)
+
+-- // Checks Everyone In The Server And Puts It In A Table
+for _, Player in ipairs(Players:GetPlayers()) do
+    if (Player ~= Client and Client:IsFriendsWith(Player.UserId)) then
+        table.insert(Script.Friends, Player)
+    end
+    Script.Functions.NewPlayer(Player)
+end
+
+-- // Checks When Players Joins And Adds Them To A Table
+Players.PlayerAdded:Connect(function(Player)
+    if (Client:IsFriendsWith(Player.UserId)) then
+        table.insert(Script.Friends, Player)
+    end
+    Script.Functions.NewPlayer(Player)
+end)
+
+-- // Checks If A Player Left And Removes Them From The Table
+Players.PlayerRemoving:Connect(function(Player)
+    local i = table.find(Script.Friends, Player)
+    if (i) then
+        table.remove(Script.Friends, i)
+    end
+    for i,v in pairs(Script.EspPlayers[Player]) do
+        v:Remove()
+    end
+    Script.EspPlayers[Player] = nil
+end)
